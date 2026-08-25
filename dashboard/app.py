@@ -53,11 +53,18 @@ st.markdown(
         background-color: {COLORS["background"]};
         color: {COLORS["navy"]};
     }}
+    .block-container,
+    [data-testid="stMainBlockContainer"] {{
+        padding-top: 2.5rem;
+    }}
     [data-testid="stHeader"] {{
         background-color: rgba(240, 240, 240, 0.92);
     }}
     h1, h2, h3, h4, p, label {{
         color: {COLORS["navy"]};
+    }}
+    [data-testid="stCaptionContainer"] {{
+        margin-bottom: 1.5rem;
     }}
     button[data-baseweb="tab"] {{
         color: {COLORS["blue"]};
@@ -75,6 +82,37 @@ st.markdown(
     }}
     hr {{
         border-color: {COLORS["blue_light"]};
+    }}
+    @media (max-width: 768px) {{
+        .block-container,
+        [data-testid="stMainBlockContainer"] {{
+            padding: 2.25rem 0.75rem 1rem;
+        }}
+        h1 {{
+            font-size: 1.75rem !important;
+            line-height: 1.2 !important;
+        }}
+        h2, h3 {{
+            font-size: 1.25rem !important;
+        }}
+        [data-testid="stCaptionContainer"] {{
+            margin-bottom: 0.75rem;
+        }}
+        [data-testid="stHorizontalBlock"] {{
+            flex-direction: column;
+            gap: 0.5rem;
+        }}
+        [data-testid="stColumn"],
+        [data-testid="column"] {{
+            width: 100% !important;
+            min-width: 100% !important;
+            flex: 1 1 100% !important;
+        }}
+        [data-testid="stPlotlyChart"],
+        [data-testid="stDataFrame"] {{
+            width: 100% !important;
+            overflow-x: auto;
+        }}
     }}
     </style>
     """,
@@ -354,18 +392,40 @@ with dashboard:
         st.info("No state-level series found. Add more state series IDs in etl/fetch_bls.py.")
 
     st.divider()
-    st.subheader("State Demographics (Census ACS 1-Year)")
-
-    metric = st.selectbox(
-        "Sort table by",
-        ["unemployment_rate_pct", "bachelors_rate_pct", "labor_force", "total_population"],
-    )
+    st.subheader("State Demographics")
 
     census_table = (
         census_df.drop(columns=["state_fips"])
-        .sort_values(metric, ascending=False)
+        .rename(columns={
+            "state_name": "State",
+            "labor_force": "Labor Force",
+            "unemployed": "Unemployed",
+            "bachelors_degree": "Bachelor's Degree",
+            "total_population": "Total Population",
+            "unemployment_rate_pct": "Unemployment Rate (%)",
+            "bachelors_rate_pct": "Bachelor's Degree Rate (%)",
+        })
+        .sort_values("State")
     )
-    st.dataframe(census_table, width="stretch", hide_index=True)
+    st.dataframe(
+        census_table,
+        width="stretch",
+        height=600,
+        hide_index=True,
+        column_config={
+            "State": st.column_config.TextColumn(alignment="center"),
+            "Labor Force": st.column_config.NumberColumn(alignment="center"),
+            "Unemployed": st.column_config.NumberColumn(alignment="center"),
+            "Bachelor's Degree": st.column_config.NumberColumn(alignment="center"),
+            "Total Population": st.column_config.NumberColumn(alignment="center"),
+            "Unemployment Rate (%)": st.column_config.NumberColumn(
+                alignment="center", format="%.2f"
+            ),
+            "Bachelor's Degree Rate (%)": st.column_config.NumberColumn(
+                alignment="center", format="%.2f"
+            ),
+        },
+    )
 
 st.divider()
 st.caption(
