@@ -23,6 +23,8 @@ COLORS = {
     "yellow": "#C5BF50",
     "sky": "#63BAE4",
     "background": "#F0F0F0",
+    "surface": "#FBF8F1",
+    "gold": "#C99A45",
 }
 STATE_COLOR_SCALE = [
     [0.0, "#4747FF"],
@@ -75,10 +77,89 @@ st.markdown(
         border-bottom-color: {COLORS["yellow"]};
     }}
     [data-testid="stMetric"] {{
-        background-color: {COLORS["background"]};
-        border: 1px solid {COLORS["blue_light"]};
-        border-radius: 0.6rem;
+        background-color: {COLORS["surface"]};
+        border: 1px solid rgba(13, 26, 50, 0.10);
+        border-radius: 1rem;
         padding: 0.75rem;
+    }}
+    [data-testid="stVerticalBlockBorderWrapper"],
+    [data-testid="stPlotlyChart"],
+    [data-testid="stDataFrame"] {{
+        background-color: {COLORS["surface"]};
+        border: 1px solid rgba(13, 26, 50, 0.10);
+        border-radius: 1rem;
+        box-shadow: 0 8px 24px rgba(13, 26, 50, 0.06);
+    }}
+    [data-testid="stPlotlyChart"] {{
+        overflow: hidden;
+    }}
+    .hero-kicker {{
+        color: {COLORS["gold"]};
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        margin-bottom: 0.5rem;
+        text-transform: uppercase;
+    }}
+    .hero-title {{
+        color: {COLORS["navy"]};
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(2.25rem, 5vw, 4rem);
+        font-weight: 700;
+        letter-spacing: -0.04em;
+        line-height: 1;
+        margin: 0 0 0.65rem;
+    }}
+    .hero-copy {{
+        color: {COLORS["blue"]};
+        font-size: 0.9rem;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+        max-width: none;
+    }}
+    .kpi-card {{
+        background: {COLORS["surface"]};
+        border: 1px solid rgba(13, 26, 50, 0.10);
+        border-radius: 1rem;
+        box-shadow: 0 8px 24px rgba(13, 26, 50, 0.06);
+        margin-bottom: 1rem;
+        min-height: 138px;
+        padding: 1rem 1.1rem;
+    }}
+    .kpi-top {{
+        align-items: center;
+        display: flex;
+        gap: 0.65rem;
+    }}
+    .kpi-icon {{
+        align-items: center;
+        background: {COLORS["navy"]};
+        border-radius: 50%;
+        color: {COLORS["surface"]};
+        display: inline-flex;
+        font-size: 1rem;
+        height: 2.35rem;
+        justify-content: center;
+        width: 2.35rem;
+    }}
+    .kpi-label {{
+        color: {COLORS["navy"]};
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        line-height: 1.2;
+        text-transform: uppercase;
+    }}
+    .kpi-value {{
+        color: {COLORS["navy"]};
+        font-size: 1.65rem;
+        font-weight: 800;
+        line-height: 1.2;
+        margin: 0.65rem 0 0.2rem;
+    }}
+    .kpi-note {{
+        color: {COLORS["blue"]};
+        font-size: 0.72rem;
     }}
     hr {{
         border-color: {COLORS["blue_light"]};
@@ -113,6 +194,12 @@ st.markdown(
             width: 100% !important;
             overflow-x: auto;
         }}
+        .hero-title {{
+            font-size: 2.3rem;
+        }}
+        .kpi-card {{
+            min-height: 120px;
+        }}
     }}
     </style>
     """,
@@ -121,7 +208,7 @@ st.markdown(
 
 
 @st.cache_data
-def load_data():
+def load_data(db_modified_at):
     engine = create_engine(f"sqlite:///{DB_PATH}")
     bls_df = pd.read_sql("SELECT * FROM bls_timeseries", engine, parse_dates=["date"])
     census_df = pd.read_sql("SELECT * FROM census_state_snapshot", engine)
@@ -130,14 +217,14 @@ def load_data():
 
 def apply_chart_theme(fig):
     fig.update_layout(
-        paper_bgcolor=COLORS["background"],
-        plot_bgcolor=COLORS["background"],
+        paper_bgcolor=COLORS["surface"],
+        plot_bgcolor=COLORS["surface"],
         font={"color": COLORS["navy"]},
         title={"x": 0.5, "xanchor": "center"},
         title_font={"color": COLORS["navy"]},
         hoverlabel={
             "bgcolor": COLORS["navy"],
-            "font_color": COLORS["background"],
+            "font_color": COLORS["surface"],
             "bordercolor": COLORS["sky"],
         },
     )
@@ -154,11 +241,37 @@ def apply_chart_theme(fig):
     return fig
 
 
-st.title("U.S. Labor Market Dashboard")
-st.caption("Data from the BLS Public Data API and Census ACS 1-year estimates.")
+def series_snapshot(bls_data, series_name):
+    series = (
+        bls_data[bls_data["series_name"] == series_name]
+        .dropna(subset=["value"])
+        .sort_values("date")
+    )
+    if series.empty:
+        return None, None, None
+
+    latest = series.iloc[-1]
+    previous_value = series.iloc[-2]["value"] if len(series) > 1 else latest["value"]
+    return latest["value"], latest["value"] - previous_value, latest["date"]
+
+
+def render_kpi(icon, label, value, note):
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-top">
+                <span class="kpi-icon">{icon}</span>
+                <span class="kpi-label">{label}</span>
+            </div>
+            <div class="kpi-value">{value}</div>
+            <div class="kpi-note">{note}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 try:
-    bls_df, census_df = load_data()
+    bls_df, census_df = load_data(os.path.getmtime(DB_PATH))
 except Exception as e:
     st.error(
         "Couldn't load the database. Run the ETL pipeline first:\n\n"
@@ -170,6 +283,67 @@ dashboard = st.container()
 
 # --- Consolidated dashboard ---
 with dashboard:
+    st.markdown(
+        """
+        <div class="hero-kicker">U.S. economic indicators</div>
+        <div class="hero-title">Labor Market</div>
+        <div class="hero-copy">
+            Explore the latest trends in employment, unemployment,
+            wages, and state labor-force conditions.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    unemployment, unemployment_delta, _ = series_snapshot(
+        bls_df, "unemployment_rate_national"
+    )
+    payrolls, payrolls_delta, _ = series_snapshot(
+        bls_df, "nonfarm_payrolls"
+    )
+    earnings, earnings_delta, _ = series_snapshot(
+        bls_df, "avg_hourly_earnings"
+    )
+    earnings_change_pct = (
+        earnings_delta / (earnings - earnings_delta) * 100
+        if earnings is not None and earnings_delta is not None
+        else None
+    )
+
+    kpi_columns = st.columns(3, gap="medium")
+    with kpi_columns[0]:
+        render_kpi(
+            "◎",
+            "Unemployment rate",
+            f"{unemployment:.1f}%" if unemployment is not None else "—",
+            (
+                f"{unemployment_delta:+.1f} pp vs last month"
+                if unemployment_delta is not None
+                else "Latest national reading"
+            ),
+        )
+    with kpi_columns[1]:
+        render_kpi(
+            "↗",
+            "Total nonfarm payrolls",
+            f"{payrolls / 1000:.1f}M" if payrolls is not None else "—",
+            (
+                f"{payrolls_delta:+,.0f}K vs last month"
+                if payrolls_delta is not None
+                else "Latest national reading"
+            ),
+        )
+    with kpi_columns[2]:
+        render_kpi(
+            "$",
+            "Average hourly earnings",
+            f"${earnings:.2f}" if earnings is not None else "—",
+            (
+                f"{earnings_change_pct:+.1f}% vs last month"
+                if earnings_change_pct is not None
+                else "Latest national reading"
+            ),
+        )
     national_charts = [
         (
             "unemployment_rate_national",
@@ -218,7 +392,11 @@ with dashboard:
                 title_font_size=16,
             )
             apply_chart_theme(fig)
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(
+                fig,
+                width="stretch",
+                config={"displayModeBar": False, "responsive": True},
+            )
 
     st.divider()
 
@@ -260,8 +438,9 @@ with dashboard:
             title=f"State Unemployment Rates — Latest Available ({latest_period})",
         )
         fig.update_traces(
-            marker_line_color=COLORS["background"],
+            marker_line_color=COLORS["surface"],
             marker_line_width=1.5,
+            hovertemplate="<b>%{hovertext}</b><br>%{z:.1f}%<extra></extra>",
             selector={"type": "choropleth"},
         )
 
@@ -282,7 +461,6 @@ with dashboard:
         puerto_rico = latest_state_df[latest_state_df["state_fips"] == "72"]
         if not puerto_rico.empty:
             puerto_rico_rate = puerto_rico.iloc[0]["value"]
-            puerto_rico_period = puerto_rico.iloc[0]["date"].strftime("%B %Y")
             color_span = color_range[1] - color_range[0]
             color_position = (
                 (puerto_rico_rate - color_range[0]) / color_span
@@ -308,11 +486,9 @@ with dashboard:
                     mode="lines",
                     fill="toself",
                     fillcolor=puerto_rico_color,
-                    line={"color": COLORS["background"], "width": 1.5},
-                    text=[
-                        f"Puerto Rico<br>Unemployment Rate: {puerto_rico_rate:.1f}%"
-                        f"<br>Period: {puerto_rico_period}"
-                    ] * len(puerto_rico_lon),
+                    line={"color": COLORS["surface"], "width": 1.5},
+                    text=[f"Puerto Rico<br>{puerto_rico_rate:.1f}%"]
+                    * len(puerto_rico_lon),
                     hovertemplate="%{text}<extra></extra>",
                     showlegend=False,
                 )
@@ -335,10 +511,10 @@ with dashboard:
             dragmode=False,
             uirevision="fixed-state-map",
             margin={"l": 0, "r": 0, "t": 90, "b": 0},
-            paper_bgcolor=COLORS["background"],
+            paper_bgcolor=COLORS["surface"],
             font={"color": COLORS["navy"]},
             title={"x": 0.5, "xanchor": "center"},
-            title_font={"color": COLORS["navy"]},
+            title_font={"color": COLORS["navy"], "size": 18},
             coloraxis_colorbar={
                 "title": "",
                 "orientation": "h",
@@ -357,14 +533,14 @@ with dashboard:
                 "center": {"lat": 18.2208, "lon": -66.5901},
                 "showland": False,
                 "showocean": True,
-                "oceancolor": COLORS["background"],
+                "oceancolor": COLORS["surface"],
                 "showcountries": False,
                 "showframe": True,
                 "framecolor": COLORS["blue"],
             },
         )
         fig.update_geos(
-            bgcolor=COLORS["background"],
+            bgcolor=COLORS["surface"],
             lakecolor=COLORS["sky"],
             coastlinecolor=COLORS["blue"],
         )
@@ -392,7 +568,11 @@ with dashboard:
         st.info("No state-level series found. Add more state series IDs in etl/fetch_bls.py.")
 
     st.divider()
-    st.subheader("State Demographics")
+    st.markdown(
+        f'<div style="font-size:18px;font-weight:600;color:{COLORS["navy"]};">'
+        "State Demographics</div>",
+        unsafe_allow_html=True,
+    )
 
     census_table = (
         census_df.drop(columns=["state_fips"])
